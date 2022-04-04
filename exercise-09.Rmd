@@ -42,17 +42,11 @@ ggplot(data=d, aes(x=ECV, y=Repro_lifespan)) +
 Derive by hand the ordinary least squares regression coefficients  β1 and β0 for ECV as a function of social group size
 
 ```{r}
-x = d$ECV
-y = d$Group_size
 
-beta1 = cor(x, y) * (sd(x) / sd(y))
-beta0 = mean(x) - beta1 * mean(y)
+beta1 = cor(d$ECV, d$Group_size) * (sd(d$ECV) / sd(d$Group_size))
+beta0 = mean(d$ECV) - beta1 * mean(d$Group_size)
 
-# residuals = x - (beta0 + beta1*y)
-# num = sum(residuals^2)/(length(residuals)-2)
-# den = sum((y - mean(y))^2)
-# se_beta1 = sqrt(num/den)
-
+#beta1 is 2.46 and beta0 is 30.35  
 ```
 
 Confirm that you get the same results using the lm() function
@@ -61,18 +55,79 @@ Confirm that you get the same results using the lm() function
 m = lm(ECV ~ Group_size, data=d)
 broom::tidy(m)
 ```
+Yes, the regression coefficients using lm() match what I had above. 
+
+Repeat the analysis above for three different major radiations of primates – “catarrhines,” “platyrrhines,” and “strepsirhines”) separately. These are stored in the variable Taxonomic_group.
+
+(I summarise these in the next code block)
+
+```{r}
+d_catarrhines = d %>% 
+  filter(Taxonomic_group == "Catarrhini")
+beta1_catarrhines = cor(d_catarrhines$ECV, d_catarrhines$Group_size) * (sd(d_catarrhines$ECV) / sd(d_catarrhines$Group_size))
+beta0_catarrhines = mean(d_catarrhines$ECV) - beta1 * mean(d_catarrhines$Group_size)
+m_catarrhines = lm(ECV ~ Group_size, data=d_catarrhines)
+broom::tidy(m_catarrhines)
+
+d_platyrrhines = d %>% 
+  filter(Taxonomic_group == "Platyrrhini")
+beta1_platyrrhines = cor(d_platyrrhines$ECV, d_platyrrhines$Group_size) * (sd(d_platyrrhines$ECV) / sd(d_platyrrhines$Group_size))
+beta0_platyrrhines = mean(d_platyrrhines$ECV) - beta1 * mean(d_platyrrhines$Group_size)
+m_platyrrhines = lm(ECV ~ Group_size, data=d_platyrrhines)
+broom::tidy(m_platyrrhines)
+
+d_strepsirhines = d %>% 
+  filter(Taxonomic_group == "Strepsirhini")
+beta1_strepsirhines = cor(d_strepsirhines$ECV, d_strepsirhines$Group_size) * (sd(d_strepsirhines$ECV) / sd(d_strepsirhines$Group_size))
+beta0_strepsirhines = mean(d_strepsirhines$ECV) - beta1 * mean(d_strepsirhines$Group_size)
+m_strepsirhines = lm(ECV ~ Group_size, data=d_strepsirhines)
+broom::tidy(m_strepsirhines)
+
+```
+
+Do your regression coefficients differ among groups? How might you determine this?
+
+Yes, these regression coefficients are different as seen using both by hand beta0 and beta1 calculations and the lm() function seen above.
+
+```{r}
+col_1 = c("catarrhines", "platyrrhines", "strepsirhines")
+col_2 = c(beta0_catarrhines, beta0_platyrrhines, beta0_strepsirhines)
+col_3 = c(beta1_catarrhines,beta1_platyrrhines, beta1_strepsirhines)
+
+(data.frame(taxonomic_group = col_1, 
+            intercept = col_2,
+            slope = col_3))
+```
 
 For your first regression of ECV on social group size, calculate the standard error for the slope coefficient, the 95% CI, and the p value associated with this coefficient by hand. Also extract this same information from the results of running the lm() function.
 
 ```{r}
-#still need to do this by hand!!
+#by hand
+residuals = d$ECV - (beta0 + beta1*d$Group_size)
+num = sum(residuals^2)/(length(residuals)-2)
+den = sum((d$Group_size - mean(d$Group_size))^2)
+se_beta1 = sqrt(num/den)
 
+lower_beta1 = beta1 - qt(0.975, df = nrow(d)-2) * se_beta1
+upper_beta1 = beta1 + qt(0.975, df = nrow(d)-2) * se_beta1
+
+t_stat_beta1 = beta1/se_beta1
+p_beta1 = 2 * pt(t_stat_beta1, df = nrow(d)-2, lower.tail = FALSE)
+
+col1 = c("beta1", "standard error of slope coefficient", "lower_CI", "upper_CI", "p value")
+col2 = c(beta1, se_beta1, lower_beta1, upper_beta1, p_beta1)
+
+(data.frame(names = col1, value = col2))
+
+#using lm()
 original_slope = lm(ECV ~ Group_size, data=d) %>% 
   tidy(conf.int = TRUE, conf.level = 0.95) %>% 
   filter(term == "Group_size")
 ```
 
 Then, use a permutation approach with 1000 permutations to generate a null sampling distribution for the slope coefficient. What is it that you need to permute? What is the p value associated with your original slope coefficient?
+
+I need to permute the response variable, ECV.
 
 ```{r}
 permuted_slope = d %>%
@@ -86,9 +141,11 @@ get_confidence_interval(permuted_slope, level = 0.95)
 p_value = permuted_slope %>% 
   mutate(abs_stat = abs(stat)) %>% 
   summarise(estimate = mean(abs_stat >= abs(pull(original_slope, estimate))))
+
+(p_value)
 ```
 
-Use bootstrapping to generate a 95% CI for your estimate of the slope coefficient using both the percentile method and the theory-based method (i.e., based on the standard deviation of the bootstrapped sampling distribution). What is the p value associated with your observed slope coefficient based on each of these methods?
+Use bootstrapping to generate a 95% CI for your estimate of the slope coefficient using both the percentile method and the theory-based method (i.e., based on the standard deviation of the bootstrapped sampling distribution). Do these CIs suggest that your slope coefficient is different from zero?
 
 ```{r}
 boot_slope = d %>% 
@@ -97,12 +154,11 @@ boot_slope = d %>%
   calculate(stat = "slope")
 
 #calculating CIs based on quantile
-get_ci(boot_slope, level = 0.95, type = "percentile")
+ci_boot_slope_1 = get_ci(boot_slope, level = 0.95, type = "percentile")
 #calculating CIs based on SE
-get_ci(boot_slope, level = 0.95, type = "se", 
+ci_boot_slope_2 = get_ci(boot_slope, level = 0.95, type = "se", 
        point_estimate = pull(boot_slope, mean(stat)))
-
-#for p value, use pnorm of 0, mean and sd are those of bootstrap
 
 ```
 
+Yes, these CIs suggest that my slope coefficient is different from zero.
