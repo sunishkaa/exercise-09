@@ -1,0 +1,108 @@
+---
+title: "exercise-09"
+author: "Sunishka"
+date: "3/29/2022"
+output: html_document
+---
+
+Loading in libraries
+```{r}
+library(tidyverse)
+library(manipulate)
+library(skimr)
+library(infer)
+library(broom)
+```
+
+
+Using the {tidyverse} read_csv() function, load the “Street_et_al_2017.csv” dataset from this URL as a “tibble” named d
+Do a quick exploratory data analysis where you generate the five-number summary (median, minimum and maximum and 1st and 3rd quartile values), plus mean and standard deviation, for each quantitative variable
+
+```{r}
+f <- "https://raw.githubusercontent.com/difiore/ada-2022-datasets/main/Street_et_al_2017.csv"
+d <- read_csv(f, col_names = TRUE) %>% 
+  drop_na(ECV, Group_size)
+colnames(d)
+skim(d)
+```
+
+From this dataset, plot brain size (ECV) as a function of social group size (Group_size), longevity (Longevity), juvenile period length (Weaning), and reproductive lifespan (Repro_lifespan)
+
+```{r}
+ggplot(data=d, aes(x=ECV, y=Group_size)) +
+  geom_point()
+ggplot(data=d, aes(x=ECV, y=Longevity)) +
+  geom_point()
+ggplot(data=d, aes(x=ECV, y=Weaning)) +
+  geom_point()
+ggplot(data=d, aes(x=ECV, y=Repro_lifespan)) +
+  geom_point()
+```
+
+Derive by hand the ordinary least squares regression coefficients  β1 and β0 for ECV as a function of social group size
+
+```{r}
+x = d$ECV
+y = d$Group_size
+
+beta1 = cor(x, y) * (sd(x) / sd(y))
+beta0 = mean(x) - beta1 * mean(y)
+
+# residuals = x - (beta0 + beta1*y)
+# num = sum(residuals^2)/(length(residuals)-2)
+# den = sum((y - mean(y))^2)
+# se_beta1 = sqrt(num/den)
+
+```
+
+Confirm that you get the same results using the lm() function
+
+```{r}
+m = lm(ECV ~ Group_size, data=d)
+broom::tidy(m)
+```
+
+For your first regression of ECV on social group size, calculate the standard error for the slope coefficient, the 95% CI, and the p value associated with this coefficient by hand. Also extract this same information from the results of running the lm() function.
+
+```{r}
+#still need to do this by hand!!
+
+original_slope = lm(ECV ~ Group_size, data=d) %>% 
+  tidy(conf.int = TRUE, conf.level = 0.95) %>% 
+  filter(term == "Group_size")
+```
+
+Then, use a permutation approach with 1000 permutations to generate a null sampling distribution for the slope coefficient. What is it that you need to permute? What is the p value associated with your original slope coefficient?
+
+```{r}
+permuted_slope = d %>%
+  specify(ECV ~ Group_size) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 1000, type = "permute") %>%
+  calculate(stat = "slope")
+
+get_confidence_interval(permuted_slope, level = 0.95)
+
+p_value = permuted_slope %>% 
+  mutate(abs_stat = abs(stat)) %>% 
+  summarise(estimate = mean(abs_stat >= abs(pull(original_slope, estimate))))
+```
+
+Use bootstrapping to generate a 95% CI for your estimate of the slope coefficient using both the percentile method and the theory-based method (i.e., based on the standard deviation of the bootstrapped sampling distribution). What is the p value associated with your observed slope coefficient based on each of these methods?
+
+```{r}
+boot_slope = d %>% 
+  specify(ECV ~ Group_size) %>% 
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "slope")
+
+#calculating CIs based on quantile
+get_ci(boot_slope, level = 0.95, type = "percentile")
+#calculating CIs based on SE
+get_ci(boot_slope, level = 0.95, type = "se", 
+       point_estimate = pull(boot_slope, mean(stat)))
+
+#for p value, use pnorm of 0, mean and sd are those of bootstrap
+
+```
+
